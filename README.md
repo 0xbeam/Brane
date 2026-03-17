@@ -1,189 +1,144 @@
-# Brane
+# brane
 
-**Multi-source feedback-to-instructions engine for AI agents.**
+**Multi-source feedback aggregation engine. Slack threads, Figma comments, tweets, web pages — scraped and converted into structured agent instructions.**
 
-Scrape Slack threads, Figma comments, tweets, and web pages — convert them into structured instruction markdown that agents can execute.
+[![Node.js](https://img.shields.io/badge/Node.js-22+-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![Express](https://img.shields.io/badge/Express-5-000000?logo=express)](https://expressjs.com)
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
+[![Slack API](https://img.shields.io/badge/Slack_API-4A154B?logo=slack&logoColor=white)](https://api.slack.com)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-<img width="100%" alt="brane-dashboard" src="https://feedback-hub-blush.vercel.app" />
+---
+
+## What it does
+
+Paste any URL. Brane detects the source, scrapes it through the right adapter, categorizes every piece of feedback, and outputs agent-ready instruction markdown.
+
+```
+URL → detectAdapter() → Browser Engine → adapter.scrape() → Categorize → instruction.md
+```
+
+## Features
+
+| | Feature | Details |
+|---|---|---|
+| **Adapters** | Slack, Figma, Twitter/X, generic URL | Auto-detected from URL pattern |
+| **Browser fallback** | Cloudflare → Lightpanda → fetch | Three-tier chain, SPA-aware routing |
+| **Categorization** | Blocker / Revision / Question / Approval | Keyword + emoji signal detection |
+| **Output** | Structured JSON + agent markdown | Checklist format with severity tags |
+| **Dashboard** | React 19 + Vite 7 | Live pipeline visualization |
+| **CLI** | `brane scrape`, `brane dispatch`, `brane list` | Parallel dispatch, browser flags |
+| **API** | REST endpoints | Scrape, batch dispatch, job status |
+
+## Quick start
+
+```bash
+git clone https://github.com/0xbeam/brane.git && cd brane
+npm install
+cp .env.example .env   # add your tokens
+npm run dev             # API :3210 + Dashboard :5180
+```
+
+## CLI
+
+| Command | Description |
+|---|---|
+| `brane scrape <url> -p <project>` | Scrape a single URL |
+| `brane dispatch <url1> <url2> -p <project>` | Parallel multi-URL scrape |
+| `brane scrape <url> --browser` | Force browser engine |
+| `brane list` | List all scraped instructions |
+
+## API
+
+```bash
+# Scrape
+curl -X POST :3210/api/scrape -H "Content-Type: application/json" \
+  -d '{"url": "https://...", "project": "my-project"}'
+
+# Batch dispatch
+curl -X POST :3210/api/dispatch -H "Content-Type: application/json" \
+  -d '{"urls": ["url1", "url2"], "project": "my-project"}'
+
+# Job status
+curl :3210/api/jobs
+
+# Health (includes browser engine status)
+curl :3210/api/health
+```
 
 ## Architecture
 
 ```
-URL Input (CLI / Dashboard / API)
-     ↓
- detectAdapter(url)  →  Slack | Figma | Twitter | URL
-     ↓
- Browser Engine (Cloudflare → Lightpanda → fetch)
-     ↓
- adapter.scrape()  →  InstructionSet
-     ↓
- Categorize (blocker / revision / question / approval)
-     ↓
- Generate Markdown  →  instruction.md
-     ↓
- Save to output/  →  Dashboard renders results
+┌─────────────────────────────────────────────────┐
+│  Input: CLI / Dashboard / API                   │
+└──────────────────┬──────────────────────────────┘
+                   ▼
+          detectAdapter(url)
+           ┌───┬───┬───┬───┐
+           │ S │ F │ T │ U │  Slack · Figma · Twitter · URL
+           └─┬─┴─┬─┴─┬─┴─┬─┘
+             └───┴───┴───┘
+                   ▼
+        Browser Engine (fallback chain)
+        ┌────────────────────────┐
+        │ 1. Cloudflare Rendering│  edge-fast, JS SPAs
+        │ 2. Lightpanda          │  11x Chrome, local dev
+        │ 3. Plain fetch         │  static pages, default
+        └────────┬───────────────┘
+                 ▼
+         adapter.scrape() → InstructionSet
+                 ▼
+         Categorize (keyword + emoji signals)
+                 ▼
+         Generate markdown → output/<id>/
+           ├── instruction.json
+           ├── instruction.md
+           └── images/
 ```
 
-### Browser Engine Fallback Chain
+### Adapters
 
-Brane uses a three-tier scraping strategy:
-
-| Engine | Speed | Use Case | Config |
-|--------|-------|----------|--------|
-| **Cloudflare Browser Rendering** | Edge-fast | Production, JS-rendered SPAs | `CF_API_TOKEN` + `CF_ACCOUNT_ID` |
-| **Lightpanda** | 11x Chrome | Local dev, self-hosted | `LIGHTPANDA_URL=ws://127.0.0.1:9222` |
-| **Plain fetch** | Fastest | Static pages (default) | No config needed |
-
-SPA domains (x.com, notion.so, linear.app, medium.com) are auto-detected and routed through browser engines. Everything else uses plain fetch.
-
-## Quick Start
-
-```bash
-# Clone
-git clone https://github.com/0xbeam/Brane.git && cd Brane
-
-# Install
-npm install
-
-# Configure (at minimum, set your Slack token)
-cp .env.example .env
-# Edit .env with your tokens
-
-# Run (API + Dashboard)
-npm run dev
-```
-
-Dashboard: `http://localhost:5180`
-API: `http://localhost:3210`
-
-## Usage
-
-### Dashboard
-
-1. Click **"New Scrape"** in the header
-2. Paste one or more URLs (Slack threads, Figma files, tweets, any web page)
-3. Assign a project tag
-4. Watch the live pipeline visualization as agents process each URL
-5. View structured instructions with categorized feedback
-
-### CLI
-
-```bash
-# Scrape a single URL
-brane scrape https://your-slack.slack.com/archives/C.../p... -p my-project
-
-# Dispatch multiple URLs in parallel
-brane dispatch url1 url2 url3 -p my-project
-
-# Force browser engine
-brane scrape https://x.com/user/status/123 --browser
-
-# List all scraped instructions
-brane list
-```
-
-### API
-
-```bash
-# Scrape a URL
-curl -X POST http://localhost:3210/api/scrape \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://...", "project": "my-project"}'
-
-# Batch dispatch
-curl -X POST http://localhost:3210/api/dispatch \
-  -H "Content-Type: application/json" \
-  -d '{"urls": ["url1", "url2"], "project": "my-project"}'
-
-# Check job status
-curl http://localhost:3210/api/jobs
-
-# Health check (includes browser engine status)
-curl http://localhost:3210/api/health
-```
-
-## Source Adapters
-
-| Source | What It Scrapes | Auth Required |
-|--------|----------------|---------------|
+| Source | Scrapes | Auth |
+|---|---|---|
 | **Slack** | Thread messages, reactions, images, user mentions | `SLACK_BOT_TOKEN` |
-| **Figma** | File comments, threads, resolved/unresolved status | `FIGMA_TOKEN` |
-| **Twitter/X** | Tweet content from URL (browser engine recommended) | None (browser helps) |
+| **Figma** | File comments, threads, resolved status | `FIGMA_TOKEN` |
+| **Twitter/X** | Tweet content from URL | None (browser recommended) |
 | **URL** | Any web page — text, images, metadata | None |
 
-## Output Format
+### Feedback categories
 
-Each scrape produces:
+| Category | Signal | Tag |
+|---|---|---|
+| Blocker | "critical", "broken", "can't ship" | `[blocker]` |
+| Revision | "change", "fix", "should be" | `[revision]` |
+| Question | "why", "how", "?" | `[question]` |
+| Approval | "lgtm", "looks good", "ship it" | `[approval]` |
 
-```
-output/
-└── slack-1234567890-123456/
-    ├── instruction.json    # Full structured data
-    ├── instruction.md      # Agent-ready markdown
-    └── images/             # Downloaded attachments
-```
-
-### Instruction Markdown
-
-```markdown
-# Fix the header spacing on mobile
-
-**Source:** slack · **Project:** sanctuary
-**Scraped:** Mar 17, 2026
-
-## Context
-> The header overlaps the nav on iPhone 14...
-
-## Agent Instructions
-- [ ] **[blocker]** Navigation is completely hidden on mobile — @designer
-- [ ] **[revision]** Reduce header padding from 32px to 16px on <768px — @engineer
-- [ ] **[question]** Should we keep the sticky behavior on mobile? — @pm
-
-## Approvals
-- ✓ @lead — "Desktop version looks great"
-```
-
-## Feedback Categories
-
-Messages are auto-categorized using keyword + emoji signal detection:
-
-| Category | Signal | Color |
-|----------|--------|-------|
-| **Blocker** | 🛑 "critical", "broken", "can't ship" | Red |
-| **Revision** | ✏️ "change", "fix", "should be" | Amber |
-| **Question** | ❓ "why", "how", "?" | Blue |
-| **Approval** | ✅ "lgtm", "looks good", "ship it" | Green |
-| **Context** | — Original post, neutral comments | Gray |
-
-## Environment Variables
+## Configuration
 
 ```bash
 # Source adapters
-SLACK_BOT_TOKEN=xoxb-...          # channels:history, files:read, users:read
-FIGMA_TOKEN=figd_...               # Personal access token
+SLACK_BOT_TOKEN=xoxb-...            # channels:history, files:read, users:read
+FIGMA_TOKEN=figd_...                 # Personal access token
 
-# Browser engines (optional — enables JS-rendered scraping)
-CF_API_TOKEN=                      # Cloudflare API token
-CF_ACCOUNT_ID=                     # Cloudflare account ID
-LIGHTPANDA_URL=ws://127.0.0.1:9222 # Local Lightpanda endpoint
+# Browser engines (optional)
+CF_API_TOKEN=                        # Cloudflare API token
+CF_ACCOUNT_ID=                       # Cloudflare account ID
+LIGHTPANDA_URL=ws://127.0.0.1:9222   # Local Lightpanda endpoint
 
 # Server
 API_PORT=3210
 OUTPUT_DIR=./output
 ```
 
-## Tech Stack
+## Stack
 
-- **Frontend:** React 19 + Vite 7 + Tailwind 4
-- **Backend:** Express 5 + Node.js
-- **Design:** Gravity system (Cormorant Garamond + DM Sans + forest green #2A7A5B)
-- **Browser:** Cloudflare Browser Rendering / Lightpanda / puppeteer-core
-- **Deployment:** Vercel (dashboard) + any Node host (API)
+React 19 · Vite 7 · Tailwind 4 · Express 5 · Node.js · Cloudflare Browser Rendering · Lightpanda · puppeteer-core
 
 ## Live
 
-Dashboard: [feedback-hub-blush.vercel.app](https://feedback-hub-blush.vercel.app)
+[feedback-hub-blush.vercel.app](https://feedback-hub-blush.vercel.app)
 
 ---
 
-Built by [Sanctuary Parc](https://github.com/0xbeam)
+Built by [0xbeam](https://github.com/0xbeam)
